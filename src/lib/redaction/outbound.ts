@@ -9,6 +9,7 @@ import {
   createStoredRule,
   deleteEventsOlderThan,
   findCandidateVerdicts,
+  insertJevCall,
   insertRedactionEvent,
   listActiveStoredRules,
   loadSettingsRow,
@@ -36,6 +37,7 @@ function createRuntime(): RedactionRuntime {
       () => getRedisClient({ allowWhenRateLimitDisabled: true }) as unknown as RedisLike | null
     ),
     insertEvent: insertRedactionEvent,
+    insertJevCall,
     recordRuleHits,
     deleteEventsOlderThan,
     discovery: {

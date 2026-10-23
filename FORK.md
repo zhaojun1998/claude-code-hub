@@ -27,6 +27,12 @@
   - 实现方式：按「所在字符串的指纹 + 偏移 + 值」生成命中键，每个会话（无会话时按 API Key）在 Redis 中记住已报告的命中键（默认 72 小时，Redis 不可用时退化为进程内存）。
   - 可关闭「保存原文」，此时只保存 `sk-p…uV (51)` 形式的遮盖预览。
   - 非管理员用户只能看到自己请求的脱敏记录。
+  - 筛选条件里有「触发脱敏」开关，只看产生了脱敏记录的请求；统计面板和导出同样生效。
+- **脱敏记录页**（顶部导航「脱敏记录」，`/dashboard/redaction`，仅管理员）：
+  - 按时间范围（24 小时 / 7 天 / 30 天 / 全部）汇总：新增脱敏的请求数、新增脱敏值、会话数、Jev 调用次数（失败、超出同步等待时间的次数）、Jev 发现的规则（已启用 / 待审核），以及命中最多的规则；有待审核规则时给出入口。
+  - 「脱敏记录」页签：每条记录的用户 / Key、模型、会话（可跳转到使用记录）、新增 / 累计数量和命中的规则，展开可看原文与占位符。
+  - 「Jev 自动发现」页签：每次真正调用了 Jev 的请求一条记录（候选值都已判定过时不会调用，也不记录），可按「发现了规则」「调用失败」筛选；展开可看每个候选值的线索、Jev 判定的类别和置信度，以及结果（已创建生效 / 待审核规则、规则已存在、无害、低于建议阈值、未返回判定、调用失败）。候选值是否保存原文同样受「保存原文」开关控制。
+  - Jev 调用记录与脱敏记录使用同一个保留天数。
 
 > 注意：这是**不可逆**脱敏（与 privacy-filter 一致）。模型看到的是占位符，所以如果让模型把某个被遮盖的值写进文件，写进去的会是占位符；编辑包含被遮盖值的文件也可能因为 `old_string` 不匹配而失败。这正是邮箱、IP 等规则默认关闭的原因。
 
@@ -37,7 +43,7 @@
 3. 需要自动发现时，在「Jev 自动发现」中填写 API Key（TypeSafe 直连，或通过 OpenRouter），点「测试连接」，开启后保存。
 4. 「自定义与自动发现」页可以审核 Jev 生成的待审核规则（批准 / 拒绝 / 编辑 / 删除）。
 
-数据表（运行时自动创建，无需迁移）：`fork_redaction_settings`、`fork_redaction_rules`、`fork_redaction_candidates`、`fork_redaction_events`。
+数据表（运行时自动创建，无需迁移）：`fork_redaction_settings`、`fork_redaction_rules`、`fork_redaction_candidates`、`fork_redaction_events`、`fork_redaction_jev_calls`。
 
 ## 构建 GHCR 镜像
 
@@ -45,6 +51,7 @@
 
 - 推送到 `main` 时自动运行：先跑脱敏单元测试，再用上游的 `deploy/Dockerfile` 构建并推送镜像。
 - 镜像：`ghcr.io/<你的用户名>/claude-code-hub`，标签 `latest`、`<上游版本>-fork.<短 SHA>`、`sha-<短 SHA>`。可用仓库变量 `FORK_IMAGE_NAME` 改镜像名。
+- 应用内显示的版本号是 `<上游版本>+fork.<短 SHA>`：`+` 后面是语义化版本的构建元数据，比较版本时会被忽略，所以和同号的上游正式版视为相同，顶部不会一直提示「发现新版本」；上游发布更高版本时仍会正常提示。Docker 标签不允许出现 `+`，所以镜像标签仍用 `-fork.`。
 - 同时构建 `linux/amd64` 和 `linux/arm64`：两种架构分别在 GitHub 的原生机器上并行构建（不用 QEMU 模拟），最后合并成同一个多架构标签，x86 和 ARM 服务器拉同一个地址即可。原生 ARM 构建机对公开仓库免费。
 
 首次设置：
@@ -85,8 +92,15 @@
 | `src/app/[locale]/dashboard/logs/_components/error-details-dialog/index.tsx` | 导入并在概要页顶部渲染 `<RedactionDetailsSection />` |
 | `src/app/[locale]/settings/_lib/nav-items.ts` | 设置导航新增一项 |
 | `messages/*/settings/index.ts` | 注册 `redaction` 文案 |
+| `src/app/[locale]/dashboard/_components/dashboard-header.tsx` | 顶部导航新增「脱敏记录」（仅管理员） |
+| `src/repository/_shared/usage-log-filters.ts` | 筛选参数加 `redactedOnly`；`buildUsageLogConditions` 末尾追加 `buildRedactionLogConditions` |
+| `src/repository/usage-logs.ts` | `UsageLogFilters` 加 `redactedOnly`；列表和统计的 ledger 查询分支各追加一行 `buildRedactionLogConditions` |
+| `src/app/api/v1/resources/usage-logs/handlers.ts` | 查询和导出读取 `redactedOnly` 查询参数（导出的 JSON 请求体是严格校验的，所以放在 URL 上，OpenAPI 文档不变） |
+| `src/lib/api-client/v1/actions/usage-logs.ts` | 导出时把 `redactedOnly` 从请求体移到 URL |
+| `src/app/[locale]/dashboard/logs/_utils/logs-query.ts` | URL 解析和生成 `redactedOnly` |
+| `src/app/[locale]/dashboard/logs/_components/` 下的 `usage-logs-view-virtualized.tsx`、`usage-logs-filters.tsx`、`filters/types.ts`、`filters/request-filters.tsx`、`filters/active-filters-display.tsx` | 「触发脱敏」筛选开关、筛选计数和已选条件标签 |
 
-新增文件：`src/lib/redaction/**`、`src/app/api/fork/redaction/**`、`src/app/[locale]/settings/redaction/**`、`src/app/[locale]/dashboard/logs/_components/redaction/**`、`messages/*/settings/redaction.json`、`tests/unit/redaction/**`、`.github/workflows/fork-*.yml`、`scripts/fork/**`、`FORK.md`。
+新增文件：`src/lib/redaction/**`、`src/app/api/fork/redaction/**`、`src/app/[locale]/settings/redaction/**`、`src/app/[locale]/dashboard/redaction/**`、`src/app/[locale]/dashboard/logs/_components/redaction/**`、`messages/*/settings/redaction.json`、`tests/unit/redaction/**`、`.github/workflows/fork-*.yml`、`scripts/fork/**`、`FORK.md`。
 
 页面通过独立的 REST 路由 `/api/fork/redaction/*` 读写数据（上游禁止客户端组件直接调用 Server Action），鉴权、CSRF 和管理员校验复用上游 `/api/v1` 的中间件，但没有注册进上游的 OpenAPI 应用，所以上游改动 `/api/v1` 不会和本功能冲突。
 
@@ -109,3 +123,5 @@ bun run lint
 - `src/lib/redaction/candidates.ts`、`jev-client.ts`、`discovery.ts`：Jev 自动发现
 - `src/lib/redaction/runtime.ts`、`outbound.ts`：运行时与 forwarder 接入
 - `src/lib/redaction/http-api.ts`、`client-api.ts`：页面使用的 REST 路由与浏览器端调用
+- `src/lib/redaction/usage-log-filter.ts`、`usage-log-params.ts`：使用记录的「触发脱敏」筛选
+- `src/app/[locale]/dashboard/redaction/**`：脱敏记录页

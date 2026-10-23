@@ -183,7 +183,8 @@
     "loadFailed": "マスキング記録の読み込みに失敗しました",
     "copy": "元の値をコピー",
     "copied": "コピーしました",
-    "more": "保存されていない値があと {count} 個あります"
+    "more": "保存されていない値があと {count} 個あります",
+    "filterRedactedOnly": "マスキング発生"
   },
   "errors": {
     "PERMISSION_DENIED": "権限がありません",
@@ -242,5 +243,100 @@
     "ipv4": "IPv4 アドレス",
     "mac_address": "MAC アドレス",
     "internal_host": "内部ホスト名（.internal/.corp/.lan など）"
+  },
+  "records": {
+    "nav": "マスキング記録",
+    "title": "マスキング記録",
+    "description": "送信リクエストでマスキングされた内容と、Jev 自動検出の判定結果・追加されたルールを確認できます。",
+    "settingsLink": "マスキング設定",
+    "refresh": "更新",
+    "loading": "読み込み中...",
+    "loadFailed": "記録の読み込みに失敗しました",
+    "range": {
+      "label": "期間",
+      "24h": "過去 24 時間",
+      "7d": "過去 7 日間",
+      "30d": "過去 30 日間",
+      "all": "すべて"
+    },
+    "tabs": {
+      "events": "マスキング記録",
+      "jev": "Jev 自動検出"
+    },
+    "stats": {
+      "events": "新たにマスキングされたリクエスト",
+      "sessions": "{count} セッション",
+      "findings": "新たにマスキングされた値",
+      "jevCalls": "Jev 呼び出し回数",
+      "jevCallsHint": "候補 {candidates} 件を送信、失敗 {failed} 回、待機時間超過 {timedOut} 回",
+      "jevRules": "Jev が検出したルール",
+      "jevRulesHint": "有効 {active} 件、承認待ち {pending} 件",
+      "pendingReview": "自動検出されたルール {count} 件が承認待ちです",
+      "pendingReviewLink": "確認する",
+      "topRules": "よく使われたルール",
+      "noTopRules": "この期間にマスキングはありません。"
+    },
+    "events": {
+      "empty": "この期間のマスキング記録はありません。",
+      "masked": "新規 {count} 件 / 累計 {total} 件",
+      "details": "詳細",
+      "hide": "閉じる"
+    },
+    "jev": {
+      "filterLabel": "Jev 呼び出しの絞り込み",
+      "filter": {
+        "all": "すべての呼び出し",
+        "discovered": "ルールを検出",
+        "failed": "失敗した呼び出し"
+      },
+      "empty": "この期間の Jev 呼び出しはありません。",
+      "emptyHint": "Jev が呼び出されるのは、Jev 自動検出が有効で、まだ判定されていない候補値がリクエストに含まれる場合だけです。",
+      "summary": "候補 {candidates} 件、判定済み {judged} 件",
+      "activeRules": "有効 {count} 件",
+      "pendingRules": "承認待ち {count} 件",
+      "duration": "{ms} ミリ秒",
+      "status": {
+        "ok": "成功",
+        "failed": "失敗",
+        "timedOut": "同期待機時間を超過"
+      },
+      "mode": {
+        "sync": "同期",
+        "async": "非同期"
+      },
+      "sendMode": {
+        "masked": "形状のみ",
+        "full": "値そのもの"
+      },
+      "details": "詳細",
+      "hide": "閉じる",
+      "error": "エラー: {error}",
+      "tokens": "入力 {count} トークン",
+      "maskedValues": "元の値は保存されていないため、マスク済みのプレビューを表示しています。",
+      "value": "値",
+      "signal": "手がかり",
+      "confidence": "確信度 {value}%",
+      "ruleIds": "ルール {ids}",
+      "category": {
+        "secret": "シークレット",
+        "personal": "個人情報",
+        "internal": "内部情報",
+        "benign": "無害"
+      },
+      "outcome": {
+        "active": "ルールを作成（有効）",
+        "pending": "ルールを作成（承認待ち）",
+        "existing": "ルールは既に存在",
+        "benign": "無害と判定",
+        "low_confidence": "提案しきい値未満",
+        "unjudged": "判定なし",
+        "failed": "呼び出し失敗"
+      }
+    },
+    "pager": {
+      "prev": "前へ",
+      "next": "次へ",
+      "page": "{page} ページ"
+    }
   }
 }

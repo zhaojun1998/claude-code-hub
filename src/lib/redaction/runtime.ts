@@ -7,13 +7,19 @@
 
 import { BUILTIN_RULES, isBuiltinRuleEnabled } from "./builtin-rules";
 import { maskValue } from "./candidates";
-import { type DiscoveryDeps, type DiscoveryOutcome, RuleDiscovery } from "./discovery";
+import {
+  type DiscoveryCandidateResult,
+  type DiscoveryDeps,
+  type DiscoveryOutcome,
+  RuleDiscovery,
+} from "./discovery";
 import { RedactionEngine } from "./engine";
 import { findingKey, type SeenStore, selectNewRedactions } from "./incremental";
 import { applyBodyScan, type BodyScan, SegmentMatchCache, scanBody } from "./redact-body";
-import type { EventInput } from "./store";
+import type { EventInput, JevCallInput } from "./store";
 import type {
   BodyRedaction,
+  JevCandidateResult,
   RedactionFinding,
   RedactionRuleDefinition,
   RedactionSettings,
@@ -54,6 +60,7 @@ export interface RuntimeDeps {
   listActiveStoredRules(): Promise<StoredRedactionRule[]>;
   seenStore: SeenStore;
   insertEvent(input: EventInput): Promise<void>;
+  insertJevCall?(input: JevCallInput): Promise<void>;
   recordRuleHits(ruleIds: number[]): Promise<void>;
   deleteEventsOlderThan(days: number): Promise<number>;
   discovery: Omit<DiscoveryDeps, "onRulesChanged" | "onError">;
@@ -120,6 +127,16 @@ function sessionScope(session: RedactionSessionLike): string | null {
   return typeof keyId === "number" ? `key:${keyId}` : null;
 }
 
+function requestIdentity(session: RedactionSessionLike) {
+  return {
+    messageRequestId: session.messageContext?.id ?? null,
+    sessionId: session.sessionId ?? null,
+    requestSequence: session.requestSequence ?? null,
+    userId: session.messageContext?.user?.id ?? session.authState?.user?.id ?? null,
+    keyId: session.messageContext?.key?.id ?? session.authState?.key?.id ?? null,
+  };
+}
+
 function storedRuleId(ruleId: string): number | null {
   const match = /^(?:custom|jev):(\d+)$/.exec(ruleId);
   return match ? Number(match[1]) : null;
@@ -135,6 +152,23 @@ export function toFinding(redaction: BodyRedaction, recordOriginals: boolean): R
     path: redaction.path,
     contextBefore: redaction.contextBefore,
     contextAfter: redaction.contextAfter,
+  };
+}
+
+export function toJevResult(
+  result: DiscoveryCandidateResult,
+  recordOriginals: boolean
+): JevCandidateResult {
+  const { candidate } = result;
+  return {
+    value: recordOriginals ? candidate.value : maskValue(candidate.value),
+    hint: candidate.hint,
+    keyName: candidate.keyName ?? null,
+    path: candidate.path,
+    category: result.category,
+    confidence: result.confidence,
+    outcome: result.outcome,
+    ruleIds: result.ruleIds,
   };
 }
 
@@ -253,12 +287,25 @@ export class RedactionRuntime {
 
     const jev = snapshot.settings.jev;
     if (firstAttempt && jev.enabled && jev.apiKey && scan.freshSegments.length > 0) {
+      const startedAt = this.now();
       const pending = this.discovery.discover(scan.freshSegments, jev).catch((error) => {
         this.deps.logger.warn("[Redaction] Rule discovery failed", {
           error: error instanceof Error ? error.message : String(error),
         });
         return null;
       });
+      // Recorded when discovery settles, also when a sync wait gave up on it.
+      void pending
+        .then((outcome) =>
+          outcome
+            ? this.recordJevCall(session, outcome, snapshot.settings, this.now() - startedAt)
+            : undefined
+        )
+        .catch((error) => {
+          this.deps.logger.warn("[Redaction] Failed to record Jev call", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
       if (jev.mode === "sync") {
         discovery = await withTimeout(pending, jev.timeoutMs);
         if (discovery && discovery.activeRules > 0) {
@@ -331,11 +378,7 @@ export class RedactionRuntime {
     if (fresh.length === 0) return;
 
     await this.deps.insertEvent({
-      messageRequestId: session.messageContext?.id ?? null,
-      sessionId: session.sessionId ?? null,
-      requestSequence: session.requestSequence ?? null,
-      userId: session.messageContext?.user?.id ?? session.authState?.user?.id ?? null,
-      keyId: session.messageContext?.key?.id ?? session.authState?.key?.id ?? null,
+      ...requestIdentity(session),
       totalCount: all.length,
       newCount: fresh.length,
       originalsRecorded: settings.recordOriginals,
@@ -344,9 +387,43 @@ export class RedactionRuntime {
         .map((redaction) => toFinding(redaction, settings.recordOriginals)),
     });
 
-    if (this.now() - this.lastCleanupAt > CLEANUP_INTERVAL_MS) {
-      this.lastCleanupAt = this.now();
-      void this.deps.deleteEventsOlderThan(settings.eventRetentionDays).catch(() => undefined);
-    }
+    this.maybeCleanup(settings);
+  }
+
+  /** Only requests that actually sent candidates to Jev are recorded. */
+  private async recordJevCall(
+    session: RedactionSessionLike,
+    outcome: DiscoveryOutcome,
+    settings: RedactionSettings,
+    durationMs: number
+  ): Promise<void> {
+    if (!this.deps.insertJevCall || outcome.candidates === 0) return;
+    const { jev } = settings;
+    await this.deps.insertJevCall({
+      ...requestIdentity(session),
+      mode: jev.mode,
+      sendMode: jev.sendMode,
+      model: outcome.model ?? jev.model,
+      candidateCount: outcome.candidates,
+      judgedCount: outcome.judged,
+      activeRules: outcome.activeRules,
+      pendingRules: outcome.pendingRules,
+      inputTokens: outcome.inputTokens > 0 ? outcome.inputTokens : null,
+      durationMs: Math.max(0, Math.round(durationMs)),
+      timedOut: jev.mode === "sync" && durationMs > jev.timeoutMs,
+      ok: outcome.errors.length === 0,
+      error: outcome.errors.length > 0 ? outcome.errors.join("; ").slice(0, 500) : null,
+      originalsRecorded: settings.recordOriginals,
+      results: outcome.results
+        .slice(0, MAX_STORED_FINDINGS)
+        .map((result) => toJevResult(result, settings.recordOriginals)),
+    });
+    this.maybeCleanup(settings);
+  }
+
+  private maybeCleanup(settings: RedactionSettings): void {
+    if (this.now() - this.lastCleanupAt <= CLEANUP_INTERVAL_MS) return;
+    this.lastCleanupAt = this.now();
+    void this.deps.deleteEventsOlderThan(settings.eventRetentionDays).catch(() => undefined);
   }
 }

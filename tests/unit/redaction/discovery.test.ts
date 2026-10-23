@@ -168,6 +168,75 @@ describe("RuleDiscovery", () => {
     expect(deps.callJev).not.toHaveBeenCalled();
   });
 
+  test("reports what happened to every candidate", async () => {
+    const deps = makeDeps((hashes) => ({
+      ok: true,
+      durationMs: 3,
+      model: "jev-1.13.0",
+      inputTokens: 120,
+      judgements: [
+        { valueHash: hashes[0], category: "secret", confidence: 0.96 },
+        // A repeated judgement for the same candidate is ignored.
+        { valueHash: hashes[0], category: "benign", confidence: 0.9 },
+        { valueHash: "unknown", category: "secret", confidence: 0.9 },
+      ],
+    }));
+    const outcome = await new RuleDiscovery(deps).discover([segment(TEXT)], settings);
+    expect(outcome).toMatchObject({ judged: 1, model: "jev-1.13.0", inputTokens: 120 });
+    expect(outcome.results.map((r) => [r.candidate.hint, r.outcome, r.ruleIds])).toEqual([
+      ["assignment", "active", [1, 2]],
+      ["high_entropy", "unjudged", []],
+    ]);
+    expect(outcome.results[0]).toMatchObject({ category: "secret", confidence: 0.96 });
+    expect(outcome.results[1]).toMatchObject({ category: null, confidence: null });
+  });
+
+  test("outcomes for pending, low-confidence, benign, existing and failed candidates", async () => {
+    const outcomesFor = async (answer: (hashes: string[]) => JevCallResult) => {
+      const deps = makeDeps(answer);
+      const outcome = await new RuleDiscovery(deps).discover([segment(TEXT)], settings);
+      return outcome.results.map((result) => result.outcome);
+    };
+
+    expect(
+      await outcomesFor((hashes) => ({
+        ok: true,
+        durationMs: 1,
+        judgements: [
+          { valueHash: hashes[0], category: "personal", confidence: 0.7 },
+          { valueHash: hashes[1], category: "internal", confidence: 0.2 },
+        ],
+      }))
+    ).toEqual(["pending", "low_confidence"]);
+
+    expect(
+      await outcomesFor((hashes) => ({
+        ok: true,
+        durationMs: 1,
+        judgements: [{ valueHash: hashes[0], category: "benign", confidence: 0.99 }],
+      }))
+    ).toEqual(["benign", "unjudged"]);
+
+    const existing = makeDeps((hashes) => ({
+      ok: true,
+      durationMs: 1,
+      judgements: [{ valueHash: hashes[0], category: "secret", confidence: 0.99 }],
+    }));
+    existing.createStoredRule.mockResolvedValue(null as unknown as StoredRedactionRule);
+    const existingOutcome = await new RuleDiscovery(existing).discover([segment(TEXT)], settings);
+    expect(existingOutcome.results[0]).toMatchObject({ outcome: "existing", ruleIds: [] });
+
+    const failing = makeDeps(() => ({
+      ok: false,
+      error: "timeout",
+      judgements: [],
+      durationMs: 1,
+    }));
+    const failed = await new RuleDiscovery(failing).discover([segment(TEXT)], settings);
+    expect(failed.results.map((result) => result.outcome)).toEqual(["failed", "failed"]);
+    expect(failed).toMatchObject({ model: null, inputTokens: 0, errors: ["timeout"] });
+  });
+
   test("duplicate rules are not counted", async () => {
     const deps = makeDeps((hashes) => ({
       ok: true,

@@ -183,7 +183,8 @@
     "loadFailed": "載入脫敏記錄失敗",
     "copy": "複製原文",
     "copied": "已複製",
-    "more": "還有 {count} 個值未保存"
+    "more": "還有 {count} 個值未保存",
+    "filterRedactedOnly": "觸發脫敏"
   },
   "errors": {
     "PERMISSION_DENIED": "權限不足",
@@ -242,5 +243,100 @@
     "ipv4": "IPv4 位址",
     "mac_address": "MAC 位址",
     "internal_host": "內網主機名稱（.internal/.corp/.lan 等）"
+  },
+  "records": {
+    "nav": "脫敏記錄",
+    "title": "脫敏記錄",
+    "description": "查看出站請求中被脫敏的內容，以及 Jev 自動發現的判定結果和新增規則。",
+    "settingsLink": "脫敏設定",
+    "refresh": "重新整理",
+    "loading": "載入中...",
+    "loadFailed": "載入記錄失敗",
+    "range": {
+      "label": "時間範圍",
+      "24h": "最近 24 小時",
+      "7d": "最近 7 天",
+      "30d": "最近 30 天",
+      "all": "全部"
+    },
+    "tabs": {
+      "events": "脫敏記錄",
+      "jev": "Jev 自動發現"
+    },
+    "stats": {
+      "events": "新增脫敏的請求",
+      "sessions": "{count} 個會話",
+      "findings": "新增脫敏值",
+      "jevCalls": "Jev 呼叫次數",
+      "jevCallsHint": "共送檢 {candidates} 個候選值，失敗 {failed} 次，超出等待時間 {timedOut} 次",
+      "jevRules": "Jev 發現的規則",
+      "jevRulesHint": "已啟用 {active} 條，待審核 {pending} 條",
+      "pendingReview": "有 {count} 條自動發現的規則等待審核",
+      "pendingReviewLink": "前往審核",
+      "topRules": "命中最多的規則",
+      "noTopRules": "此時間範圍內沒有脫敏。"
+    },
+    "events": {
+      "empty": "此時間範圍內沒有脫敏記錄。",
+      "masked": "新增 {count} 個 / 累計 {total} 個",
+      "details": "詳情",
+      "hide": "收起"
+    },
+    "jev": {
+      "filterLabel": "篩選 Jev 呼叫",
+      "filter": {
+        "all": "全部呼叫",
+        "discovered": "發現了規則",
+        "failed": "呼叫失敗"
+      },
+      "empty": "此時間範圍內沒有 Jev 呼叫。",
+      "emptyHint": "只有開啟 Jev 自動發現，且請求中出現尚未判定過的候選值時，才會呼叫 Jev。",
+      "summary": "候選 {candidates} 個，已判定 {judged} 個",
+      "activeRules": "啟用 {count} 條",
+      "pendingRules": "待審核 {count} 條",
+      "duration": "{ms} 毫秒",
+      "status": {
+        "ok": "成功",
+        "failed": "失敗",
+        "timedOut": "超出同步等待時間"
+      },
+      "mode": {
+        "sync": "同步",
+        "async": "非同步"
+      },
+      "sendMode": {
+        "masked": "僅傳送特徵",
+        "full": "傳送原值"
+      },
+      "details": "詳情",
+      "hide": "收起",
+      "error": "錯誤：{error}",
+      "tokens": "輸入 {count} tokens",
+      "maskedValues": "未保存原始值，以下顯示的是遮蓋後的預覽。",
+      "value": "值",
+      "signal": "線索",
+      "confidence": "信賴度 {value}%",
+      "ruleIds": "規則 {ids}",
+      "category": {
+        "secret": "金鑰",
+        "personal": "個人資訊",
+        "internal": "內部資訊",
+        "benign": "無害"
+      },
+      "outcome": {
+        "active": "已建立規則（已啟用）",
+        "pending": "已建立規則（待審核）",
+        "existing": "規則已存在",
+        "benign": "判定為無害",
+        "low_confidence": "低於建議閾值",
+        "unjudged": "未回傳判定",
+        "failed": "呼叫失敗"
+      }
+    },
+    "pager": {
+      "prev": "上一頁",
+      "next": "下一頁",
+      "page": "第 {page} 頁"
+    }
   }
 }

@@ -16,6 +16,7 @@ import {
   UsageLogsExportCreateSchema,
   UsageLogsQuerySchema,
 } from "@/lib/api/v1/schemas/usage-logs";
+import { readRedactionLogFilter } from "@/lib/redaction/usage-log-params"; // [fork:redaction]
 
 export async function listUsageLogs(c: Context): Promise<Response> {
   const query = parseUsageLogsQuery(c);
@@ -99,9 +100,10 @@ export async function createUsageLogsExport(c: Context): Promise<Response> {
     });
   }
 
+  const input = { ...body.data, ...readRedactionLogFilter(c.req.query("redactedOnly")) }; // [fork:redaction]
   const result = preferAsync
-    ? await callAction(c, actions.startUsageLogsExport, [body.data] as never[], c.get("auth"))
-    : await callAction(c, actions.exportUsageLogs, [body.data] as never[], c.get("auth"));
+    ? await callAction(c, actions.startUsageLogsExport, [input] as never[], c.get("auth"))
+    : await callAction(c, actions.exportUsageLogs, [input] as never[], c.get("auth"));
   if (!result.ok) return actionError(c, result);
 
   if (preferAsync) {
@@ -176,6 +178,7 @@ function parseUsageLogsQuery(c: Context): UsageLogsActionQueryInput | Response {
   const { cursorCreatedAt, cursorId, ...rest } = query.data;
   return {
     ...rest,
+    ...readRedactionLogFilter(c.req.query("redactedOnly")), // [fork:redaction]
     cursor: cursorCreatedAt && cursorId ? { createdAt: cursorCreatedAt, id: cursorId } : undefined,
   };
 }

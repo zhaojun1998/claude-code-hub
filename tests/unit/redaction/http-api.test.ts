@@ -14,6 +14,9 @@ const actions = vi.hoisted(() => ({
   clearJevVerdictsAction: vi.fn(),
   getRedactionSummariesAction: vi.fn(),
   getRedactionEventsAction: vi.fn(),
+  getRedactionRecordStatsAction: vi.fn(),
+  listRedactionEventsAction: vi.fn(),
+  listJevCallsAction: vi.fn(),
 }));
 
 vi.mock("@/lib/redaction/service", () => actions);
@@ -138,6 +141,28 @@ describe("redaction REST app", () => {
     expect(deleted.status).toBe(200);
     expect(await deleted.json()).toBeNull();
     expect(actions.deleteRedactionRuleAction).toHaveBeenCalledWith(7);
+  });
+
+  test("records routes are admin only and pass the raw query through", async () => {
+    const query = "from=2026-01-01T00:00:00.000Z&page=2&pageSize=10&sessionId=s1&filter=failed";
+    const expected = {
+      from: "2026-01-01T00:00:00.000Z",
+      to: undefined,
+      page: "2",
+      pageSize: "10",
+      sessionId: "s1",
+      filter: "failed",
+    };
+    expect((await request("GET", `/records/stats?${query}`)).status).toBe(200);
+    expect(actions.getRedactionRecordStatsAction).toHaveBeenCalledWith(expected);
+    expect((await request("GET", `/records/events?${query}`)).status).toBe(200);
+    expect(actions.listRedactionEventsAction).toHaveBeenCalledWith(expected);
+    expect((await request("GET", `/records/jev-calls?${query}`)).status).toBe(200);
+    expect(actions.listJevCallsAction).toHaveBeenCalledWith(expected);
+
+    for (const path of ["/records/stats", "/records/events", "/records/jev-calls"]) {
+      expect((await request("GET", path, { role: "user" })).status).toBe(403);
+    }
   });
 
   test("preview and Jev routes", async () => {

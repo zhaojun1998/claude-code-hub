@@ -1,6 +1,7 @@
 import type { SQL, SQLWrapper } from "drizzle-orm";
 import { eq, gte, lt, sql } from "drizzle-orm";
 import { messageRequest } from "@/drizzle/schema";
+import { buildRedactionLogConditions } from "@/lib/redaction/usage-log-filter"; // [fork:redaction]
 import { NON_BILLING_ENDPOINTS } from "@/lib/utils/performance-formatter";
 
 export type UsageLogReplayFilter = "all" | "replay" | "non-replay";
@@ -16,6 +17,7 @@ export interface UsageLogFilterParams {
   endpoint?: string;
   minRetryCount?: number;
   replayFilter?: UsageLogReplayFilter;
+  redactedOnly?: boolean; // [fork:redaction]
 }
 
 export const DEFAULT_HIDDEN_USAGE_LOG_ENDPOINTS = [...NON_BILLING_ENDPOINTS];
@@ -219,6 +221,8 @@ export function buildUsageLogConditions(filters: UsageLogFilterParams): SQL[] {
   if (minRetryCount > 0) {
     conditions.push(sql`${RETRY_COUNT_EXPR} >= ${minRetryCount}`);
   }
+
+  conditions.push(...buildRedactionLogConditions(filters, messageRequest.id)); // [fork:redaction]
 
   return conditions;
 }

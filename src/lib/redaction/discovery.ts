@@ -19,7 +19,12 @@ import type { JevCallResult, JevCategory, JevJudgement } from "./jev-client";
 import { JEV_MAX_CANDIDATES_PER_CALL } from "./jev-client";
 import type { FreshSegment } from "./redact-body";
 import type { CandidateVerdictRow, RuleInput } from "./store";
-import type { JevSettings, RedactionCategory, StoredRedactionRule } from "./types";
+import type {
+  JevCandidateOutcome,
+  JevSettings,
+  RedactionCategory,
+  StoredRedactionRule,
+} from "./types";
 
 export interface DiscoveryDeps {
   callJev(settings: JevSettings, candidates: DiscoveryCandidate[]): Promise<JevCallResult>;
@@ -30,12 +35,37 @@ export interface DiscoveryDeps {
   onError?(message: string, detail: Record<string, unknown>): void;
 }
 
+export interface DiscoveryCandidateResult {
+  candidate: DiscoveryCandidate;
+  category: JevCategory | null;
+  confidence: number | null;
+  outcome: JevCandidateOutcome;
+  ruleIds: number[];
+}
+
 export interface DiscoveryOutcome {
   candidates: number;
   judged: number;
   activeRules: number;
   pendingRules: number;
   errors: string[];
+  model: string | null;
+  inputTokens: number;
+  /** Per-candidate outcome, for the Jev call record. */
+  results: DiscoveryCandidateResult[];
+}
+
+export function emptyDiscoveryOutcome(): DiscoveryOutcome {
+  return {
+    candidates: 0,
+    judged: 0,
+    activeRules: 0,
+    pendingRules: 0,
+    errors: [],
+    model: null,
+    inputTokens: 0,
+    results: [],
+  };
 }
 
 const CATEGORY_MAP: Record<
@@ -122,6 +152,23 @@ export function buildRuleInputs(
   return inputs;
 }
 
+function unresolvedResult(
+  candidate: DiscoveryCandidate,
+  outcome: "failed" | "unjudged"
+): DiscoveryCandidateResult {
+  return { candidate, category: null, confidence: null, outcome, ruleIds: [] };
+}
+
+function judgedOutcome(
+  judgement: JevJudgement,
+  sensitive: boolean,
+  literal: StoredRedactionRule | null
+): JevCandidateOutcome {
+  if (!sensitive) return judgement.category === "benign" ? "benign" : "low_confidence";
+  if (!literal) return "existing";
+  return literal.status === "active" ? "active" : "pending";
+}
+
 export class RuleDiscovery {
   private readonly decided = new Map<string, number>();
   private readonly inflight = new Set<string>();
@@ -150,13 +197,7 @@ export class RuleDiscovery {
   }
 
   async discover(segments: FreshSegment[], settings: JevSettings): Promise<DiscoveryOutcome> {
-    const outcome: DiscoveryOutcome = {
-      candidates: 0,
-      judged: 0,
-      activeRules: 0,
-      pendingRules: 0,
-      errors: [],
-    };
+    const outcome = emptyDiscoveryOutcome();
     if (!settings.enabled || !settings.apiKey || segments.length === 0) return outcome;
 
     const all = collectCandidates(segments, Number.POSITIVE_INFINITY).filter(
@@ -184,6 +225,9 @@ export class RuleDiscovery {
         outcome.judged += result.judged;
         outcome.activeRules += result.activeRules;
         outcome.pendingRules += result.pendingRules;
+        outcome.inputTokens += result.inputTokens;
+        outcome.model ??= result.model;
+        outcome.results.push(...result.results);
         if (result.error) outcome.errors.push(result.error);
         rulesChanged ||= result.activeRules > 0;
       }
@@ -199,13 +243,19 @@ export class RuleDiscovery {
       judged: 0,
       activeRules: 0,
       pendingRules: 0,
+      inputTokens: 0,
+      model: null as string | null,
       error: undefined as string | undefined,
+      results: [] as DiscoveryCandidateResult[],
     };
     const result = await this.deps.callJev(settings, chunk);
+    summary.inputTokens = result.inputTokens ?? 0;
+    summary.model = result.model ?? null;
     if (!result.ok) {
       summary.error = result.error ?? "jev_failed";
       for (const candidate of chunk) {
         this.markDecided(candidate.valueHash, this.now() + FAILURE_BACKOFF_MS);
+        summary.results.push(unresolvedResult(candidate, "failed"));
       }
       this.deps.onError?.("[Redaction] Jev discovery call failed", {
         error: summary.error,
@@ -220,16 +270,30 @@ export class RuleDiscovery {
     for (const judgement of result.judgements) {
       const candidate = byHash.get(judgement.valueHash);
       if (!candidate) continue;
+      byHash.delete(judgement.valueHash);
       summary.judged++;
       let ruleId: number | null = null;
+      let literal: StoredRedactionRule | null = null;
+      const ruleIds: number[] = [];
       const inputs = buildRuleInputs(candidate, judgement, settings);
       for (const input of inputs) {
         const created = await this.deps.createStoredRule(input);
         if (!created) continue;
-        if (input.kind === "literal") ruleId = created.id;
+        ruleIds.push(created.id);
+        if (input.kind === "literal") {
+          ruleId = created.id;
+          literal = created;
+        }
         if (created.status === "active") summary.activeRules++;
         else summary.pendingRules++;
       }
+      summary.results.push({
+        candidate,
+        category: judgement.category,
+        confidence: judgement.confidence,
+        outcome: judgedOutcome(judgement, inputs.length > 0, literal),
+        ruleIds,
+      });
       verdicts.push({
         valueHash: candidate.valueHash,
         verdict: inputs.length > 0 ? "sensitive" : "benign",
@@ -241,6 +305,9 @@ export class RuleDiscovery {
         model: result.model ?? settings.model,
       });
       this.markDecided(candidate.valueHash);
+    }
+    for (const candidate of byHash.values()) {
+      summary.results.push(unresolvedResult(candidate, "unjudged"));
     }
     await this.deps.saveCandidateVerdicts(verdicts);
     return summary;

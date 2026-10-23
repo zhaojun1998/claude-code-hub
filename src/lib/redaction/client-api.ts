@@ -15,10 +15,15 @@ import type {
   RuleFormInput,
 } from "./api-types";
 import type { PublicRedactionSettings } from "./config";
+import { type RecordsQueryInput, toRecordsSearch } from "./records-query";
 import type {
   DiscoveredRuleStatus,
+  JevCallRecord,
+  RecordPage,
+  RedactionEventListItem,
   RedactionEventRecord,
   RedactionEventSummary,
+  RedactionRecordStats,
   StoredRedactionRule,
 } from "./types";
 
@@ -70,4 +75,16 @@ export const redactionApi = {
     call(apiClient.get<RedactionEventSummary[]>(`${BASE}/summaries?ids=${ids.join(",")}`)),
   getEvents: (requestId: number) =>
     call(apiClient.get<RedactionEventRecord[]>(`${BASE}/requests/${requestId}/events`)),
+  getRecordStats: (query: RecordsQueryInput = {}) =>
+    call(apiClient.get<RedactionRecordStats>(`${BASE}/records/stats${toRecordsSearch(query)}`)),
+  listRecordEvents: (query: RecordsQueryInput = {}) =>
+    call(
+      apiClient.get<RecordPage<RedactionEventListItem>>(
+        `${BASE}/records/events${toRecordsSearch(query)}`
+      )
+    ),
+  listJevCalls: (query: RecordsQueryInput = {}) =>
+    call(
+      apiClient.get<RecordPage<JevCallRecord>>(`${BASE}/records/jev-calls${toRecordsSearch(query)}`)
+    ),
 };

@@ -18,7 +18,6 @@ type LoadState =
 /** Lists the values newly masked in one request: original, placeholder, location, context. */
 export function RedactionFindings({ requestId }: { requestId: number }) {
   const t = useTranslations("settings.redaction");
-  const ruleName = useRedactionRuleName();
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
   useEffect(() => {
@@ -44,11 +43,18 @@ export function RedactionFindings({ requestId }: { requestId: number }) {
   if (state.status === "error") {
     return <p className="text-xs text-destructive">{t("logs.loadFailed")}</p>;
   }
+  return <RedactionFindingsList events={state.events} />;
+}
 
-  const findings = state.events.flatMap((event) => event.findings);
-  const newCount = state.events.reduce((sum, event) => sum + event.newCount, 0);
-  const total = state.events.reduce((max, event) => Math.max(max, event.totalCount), 0);
-  const originalsMasked = state.events.some((event) => !event.originalsRecorded);
+/** Renders the findings of already loaded redaction records (also used by the records page). */
+export function RedactionFindingsList({ events }: { events: RedactionEventRecord[] }) {
+  const t = useTranslations("settings.redaction");
+  const ruleName = useRedactionRuleName();
+
+  const findings = events.flatMap((event) => event.findings);
+  const newCount = events.reduce((sum, event) => sum + event.newCount, 0);
+  const total = events.reduce((max, event) => Math.max(max, event.totalCount), 0);
+  const originalsMasked = events.some((event) => !event.originalsRecorded);
 
   const copy = async (text: string) => {
     try {

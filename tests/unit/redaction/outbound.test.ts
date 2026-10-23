@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     loadSettingsRow: vi.fn(),
     listActiveStoredRules: vi.fn(async () => []),
     insertRedactionEvent: vi.fn(async () => undefined),
+    insertJevCall: vi.fn(async () => undefined),
     recordRuleHits: vi.fn(async () => undefined),
     deleteEventsOlderThan: vi.fn(async () => 0),
     findCandidateVerdicts: vi.fn(async () => new Set<string>()),
@@ -158,5 +159,15 @@ describe("outbound redaction wiring", () => {
     await applyOutboundRedaction(session(6), payload);
     expect(mocks.callJev).toHaveBeenCalledTimes(1);
     expect(mocks.store.findCandidateVerdicts).toHaveBeenCalled();
+    // The call is recorded for the redaction records page.
+    await vi.waitFor(() => expect(mocks.store.insertJevCall).toHaveBeenCalledTimes(1));
+    const call = (mocks.store.insertJevCall.mock.calls[0] as unknown[])[0] as {
+      messageRequestId: number;
+      candidateCount: number;
+      results: Array<{ outcome: string }>;
+    };
+    expect(call.messageRequestId).toBe(6);
+    expect(call.candidateCount).toBe(1);
+    expect(call.results.map((result) => result.outcome)).toEqual(["unjudged"]);
   });
 });

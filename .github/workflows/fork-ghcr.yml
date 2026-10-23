@@ -78,9 +78,14 @@ jobs:
           IMAGE=$(echo "ghcr.io/${{ github.repository_owner }}/${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')
           SHORT_SHA=$(git rev-parse --short=7 HEAD)
           UPSTREAM_VERSION=$(tr -d '[:space:]' < VERSION 2>/dev/null || echo "0.0.0")
+          # The app reports `+fork.<sha>` (SemVer build metadata, ignored when comparing) so the
+          # update banner treats the fork as equal to the upstream release it is based on. A
+          # `-fork.<sha>` prerelease would sort below that release and always show "new version".
+          # Docker tags cannot contain `+`, so image tags keep the `-fork.<sha>` form.
           {
             echo "image=${IMAGE}"
             echo "version=${UPSTREAM_VERSION}-fork.${SHORT_SHA}"
+            echo "app_version=${UPSTREAM_VERSION}+fork.${SHORT_SHA}"
             echo "pair=${PLATFORM//\//-}"
           } >> "$GITHUB_OUTPUT"
 
@@ -102,9 +107,9 @@ jobs:
           file: ./deploy/Dockerfile
           platforms: ${{ matrix.platform }}
           build-args: |
-            APP_VERSION=${{ steps.meta.outputs.version }}
+            APP_VERSION=${{ steps.meta.outputs.app_version }}
           labels: |
-            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.app_version }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
           outputs: type=image,name=${{ steps.meta.outputs.image }},push-by-digest=true,name-canonical=true,push=true

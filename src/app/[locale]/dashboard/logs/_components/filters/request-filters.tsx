@@ -28,6 +28,7 @@ import { SESSION_ID_SUGGESTION_MIN_LEN } from "@/lib/constants/usage-logs.consta
 import { useDebounce } from "@/lib/hooks/use-debounce";
 import type { ProviderDisplay } from "@/types/provider";
 import { useLazyEndpoints, useLazyModels } from "../../_hooks/use-lazy-filter-options";
+import { RedactedOnlyFilter } from "../redaction/redacted-only-filter"; // [fork:redaction]
 import type { UsageLogFilters } from "./types";
 
 interface RequestFiltersProps {
@@ -321,6 +322,8 @@ export function RequestFilters({
           aria-label={t("logs.filters.actualResponseModelMismatch")}
         />
       </div>
+
+      <RedactedOnlyFilter filters={filters} onFiltersChange={onFiltersChange} />
 
       {/* Session ID with suggestions */}
       <div className="space-y-2">

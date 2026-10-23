@@ -8,7 +8,7 @@ import {
   storedRuleToDefinition,
   toFinding,
 } from "@/lib/redaction/runtime";
-import type { EventInput } from "@/lib/redaction/store";
+import type { EventInput, JevCallInput } from "@/lib/redaction/store";
 import type { StoredRedactionRule } from "@/lib/redaction/types";
 
 const KEY = "sk-proj-" + "Ab3dE5gH7jK9mN1pQ3sT5vW7yZ9bC2eF4hJ6kL8nP0rS2uV";
@@ -37,11 +37,20 @@ function stored(
   };
 }
 
-function setup(settingsInput: Record<string, unknown> = {}, rules: StoredRedactionRule[] = []) {
+function setup(
+  settingsInput: Record<string, unknown> = {},
+  rules: StoredRedactionRule[] = [],
+  now: () => number = Date.now
+) {
   let settings = normalizeRedactionSettings({ enabled: true, ...settingsInput });
   const storedRules = [...rules];
   const events: EventInput[] = [];
+  const jevCalls: JevCallInput[] = [];
   const deps = {
+    now,
+    insertJevCall: vi.fn(async (input: JevCallInput) => {
+      jevCalls.push(input);
+    }),
     loadSettingsRow: vi.fn(async () => ({ settings, salt: "salt" })),
     listActiveStoredRules: vi.fn(async () =>
       storedRules.filter((rule) => rule.status === "active")
@@ -82,6 +91,7 @@ function setup(settingsInput: Record<string, unknown> = {}, rules: StoredRedacti
     runtime,
     deps,
     events,
+    jevCalls,
     setSettings(next: Record<string, unknown>) {
       settings = normalizeRedactionSettings({ enabled: true, ...next });
       runtime.invalidate();
@@ -214,6 +224,131 @@ describe("RedactionRuntime", () => {
     expect(result.discovery).toBeUndefined();
     expect(JSON.stringify(body)).toContain(INTERNAL);
     release();
+  });
+
+  test("Jev calls are recorded with what happened to each candidate", async () => {
+    const { runtime, deps, jevCalls } = setup({
+      jev: { enabled: true, apiKey: "k", mode: "sync", model: "jev-latest" },
+    });
+    deps.discovery.callJev.mockImplementation(
+      async (_settings: unknown, candidates: Array<{ valueHash: string }>) => ({
+        ok: true,
+        durationMs: 1,
+        inputTokens: 42,
+        judgements: candidates.map((candidate) => ({
+          valueHash: candidate.valueHash,
+          category: "secret" as const,
+          confidence: 0.99,
+        })),
+      })
+    );
+    await runtime.redactOutbound(session(1), {
+      messages: [{ role: "user", content: `deploy build ${INTERNAL} now` }],
+    });
+    await flush();
+    expect(jevCalls).toHaveLength(1);
+    expect(jevCalls[0]).toMatchObject({
+      messageRequestId: 1,
+      sessionId: "sess-1",
+      requestSequence: 1,
+      userId: 7,
+      keyId: 9,
+      mode: "sync",
+      sendMode: "masked",
+      model: "jev-latest",
+      candidateCount: 1,
+      judgedCount: 1,
+      activeRules: 1,
+      inputTokens: 42,
+      timedOut: false,
+      ok: true,
+      error: null,
+      originalsRecorded: true,
+    });
+    expect(jevCalls[0].results).toEqual([
+      expect.objectContaining({
+        value: INTERNAL,
+        hint: "high_entropy",
+        category: "secret",
+        confidence: 0.99,
+        outcome: "active",
+      }),
+    ]);
+
+    // The same value is never sent again, so nothing more is recorded.
+    await runtime.redactOutbound(session(2), {
+      messages: [{ role: "user", content: `deploy build ${INTERNAL} now` }],
+    });
+    await flush();
+    expect(jevCalls).toHaveLength(1);
+  });
+
+  test("failed and slow Jev calls are recorded with masked values", async () => {
+    let clock = Date.UTC(2026, 0, 1);
+    const { runtime, deps, jevCalls } = setup(
+      {
+        recordOriginals: false,
+        jev: { enabled: true, apiKey: "k", mode: "sync", timeoutMs: 1000 },
+      },
+      [],
+      () => clock
+    );
+    deps.discovery.callJev.mockImplementation(async () => {
+      clock += 5000;
+      return { ok: false, error: "http_500", status: 500, judgements: [], durationMs: 5000 };
+    });
+    await runtime.redactOutbound(session(1), {
+      messages: [{ role: "user", content: `deploy build ${INTERNAL} now` }],
+    });
+    await flush();
+    expect(jevCalls[0]).toMatchObject({
+      ok: false,
+      error: "http_500",
+      timedOut: true,
+      durationMs: 5000,
+      inputTokens: null,
+      originalsRecorded: false,
+    });
+    expect(jevCalls[0].results[0].outcome).toBe("failed");
+    expect(jevCalls[0].results[0].value).not.toBe(INTERNAL);
+    // Nothing was redacted, so the Jev record triggers the retention cleanup.
+    expect(deps.deleteEventsOlderThan).toHaveBeenCalledTimes(1);
+  });
+
+  test("Jev records are skipped without candidates and failures to store them are logged", async () => {
+    const known = setup({ jev: { enabled: true, apiKey: "k", mode: "sync" } });
+    known.deps.discovery.findCandidateVerdicts.mockImplementation(
+      async (hashes: string[]) => new Set(hashes)
+    );
+    await known.runtime.redactOutbound(session(1), {
+      messages: [{ role: "user", content: `deploy build ${INTERNAL} now` }],
+    });
+    await flush();
+    expect(known.deps.discovery.callJev).not.toHaveBeenCalled();
+    expect(known.jevCalls).toHaveLength(0);
+
+    const broken = setup({ jev: { enabled: true, apiKey: "k", mode: "async" } });
+    broken.deps.insertJevCall.mockRejectedValue(new Error("db down"));
+    await broken.runtime.redactOutbound(session(1), {
+      messages: [{ role: "user", content: `deploy build ${INTERNAL} now` }],
+    });
+    await vi.waitFor(() =>
+      expect(broken.deps.logger.warn).toHaveBeenCalledWith(
+        "[Redaction] Failed to record Jev call",
+        {
+          error: "db down",
+        }
+      )
+    );
+
+    // Without the optional dependency discovery still runs.
+    const bare = setup({ jev: { enabled: true, apiKey: "k", mode: "sync" } });
+    const { insertJevCall: _omit, ...withoutRecorder } = bare.deps;
+    const runtime = new RedactionRuntime(withoutRecorder);
+    await runtime.redactOutbound(session(1), {
+      messages: [{ role: "user", content: `deploy build ${INTERNAL} now` }],
+    });
+    expect(bare.deps.discovery.callJev).toHaveBeenCalledTimes(1);
   });
 
   test("raw bodies", async () => {

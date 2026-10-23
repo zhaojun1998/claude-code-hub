@@ -16,6 +16,9 @@ const mocks = vi.hoisted(() => ({
     clearCandidateVerdicts: vi.fn(async () => 3),
     getEventSummaries: vi.fn(async () => []),
     getEventsForRequest: vi.fn(async () => []),
+    getRedactionStats: vi.fn(async () => ({ events: 1 })),
+    listRedactionEvents: vi.fn(async () => ({ items: [], page: 1, pageSize: 20, hasMore: false })),
+    listJevCalls: vi.fn(async () => ({ items: [], page: 1, pageSize: 20, hasMore: false })),
   },
 }));
 
@@ -36,7 +39,10 @@ import {
   deleteRedactionRuleAction,
   getRedactionEventsAction,
   getRedactionOverviewAction,
+  getRedactionRecordStatsAction,
   getRedactionSummariesAction,
+  listJevCallsAction,
+  listRedactionEventsAction,
   previewRedactionAction,
   saveRedactionSettingsAction,
   setBuiltinRuleEnabledAction,
@@ -258,5 +264,40 @@ describe("redaction service", () => {
       errorCode: "PERMISSION_DENIED",
     });
     expect(await getRedactionEventsAction(1)).toMatchObject({ errorCode: "PERMISSION_DENIED" });
+  });
+
+  test("records page queries are admin only and normalized", async () => {
+    expect(
+      await getRedactionRecordStatsAction({ from: "2026-01-01T00:00:00.000Z", to: "nope" })
+    ).toEqual({ ok: true, data: { events: 1 } });
+    expect(mocks.store.getRedactionStats).toHaveBeenLastCalledWith({
+      from: new Date("2026-01-01T00:00:00.000Z"),
+      to: null,
+    });
+
+    await listRedactionEventsAction({ page: "3", pageSize: "500", sessionId: " s1 " });
+    expect(mocks.store.listRedactionEvents).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 3, pageSize: 100, sessionId: "s1", from: null })
+    );
+    await listJevCallsAction({ filter: "failed" });
+    expect(mocks.store.listJevCalls).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 1, pageSize: 20, filter: "failed" })
+    );
+
+    mocks.store.listJevCalls.mockRejectedValueOnce(new Error("db"));
+    expect(await listJevCallsAction()).toMatchObject({ errorCode: "LOAD_FAILED" });
+    mocks.store.listRedactionEvents.mockRejectedValueOnce(new Error("db"));
+    expect(await listRedactionEventsAction()).toMatchObject({ errorCode: "LOAD_FAILED" });
+    mocks.store.getRedactionStats.mockRejectedValueOnce(new Error("db"));
+    expect(await getRedactionRecordStatsAction()).toMatchObject({ errorCode: "LOAD_FAILED" });
+
+    mocks.getSession.mockResolvedValue(member);
+    for (const result of [
+      await getRedactionRecordStatsAction(),
+      await listRedactionEventsAction(),
+      await listJevCallsAction(),
+    ]) {
+      expect(result).toMatchObject({ ok: false, errorCode: "PERMISSION_DENIED" });
+    }
   });
 });

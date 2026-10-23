@@ -16,6 +16,7 @@ interface DashboardHeaderProps {
 
 export async function DashboardHeader({ session, locale }: DashboardHeaderProps) {
   const t = await getTranslations({ locale, namespace: "dashboard.nav" });
+  const tRedaction = await getTranslations({ locale, namespace: "settings.redaction.records" }); // [fork:redaction]
   const isAdmin = session?.user.role === "admin";
   const canUseDashboard = !!session && (isAdmin || session.key.canLoginWebUi);
   const documentationItem = { href: "/usage-doc", label: t("documentation") };
@@ -23,6 +24,7 @@ export async function DashboardHeader({ session, locale }: DashboardHeaderProps)
   const NAV_ITEMS: (DashboardNavItem & { adminOnly?: boolean })[] = [
     { href: "/dashboard", label: t("dashboard") },
     { href: "/dashboard/logs", label: t("usageLogs") },
+    { href: "/dashboard/redaction", label: tRedaction("nav"), adminOnly: true }, // [fork:redaction]
     { href: "/dashboard/leaderboard", label: t("leaderboard") },
     { href: "/dashboard/availability", label: t("availability"), adminOnly: true },
     { href: "/dashboard/providers", label: t("providers"), adminOnly: true },

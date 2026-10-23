@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 const fake = vi.hoisted(() => {
   const state = {
     results: [] as unknown[],
+    executeResults: [] as unknown[],
     calls: [] as Array<[string, unknown[]]>,
     failTransaction: 0,
   };
@@ -44,6 +45,10 @@ const fake = vi.hoisted(() => {
       state.calls.push(["delete", args]);
       return chain("delete");
     },
+    execute: async (query: unknown) => {
+      state.calls.push(["db.execute", [query]]);
+      return state.executeResults.shift();
+    },
     transaction: async (fn: (tx: unknown) => Promise<void>) => {
       if (state.failTransaction > 0) {
         state.failTransaction--;
@@ -61,7 +66,11 @@ const fake = vi.hoisted(() => {
 
 vi.mock("@/drizzle/db", () => ({ db: fake.db }));
 
-import { REDACTION_SCHEMA_DDL } from "@/lib/redaction/schema";
+import {
+  REDACTION_SCHEMA_DDL,
+  redactionEventsTable,
+  redactionJevCallsTable,
+} from "@/lib/redaction/schema";
 import * as store from "@/lib/redaction/store";
 
 const created = new Date("2026-01-02T03:04:05.000Z");
@@ -264,7 +273,118 @@ describe("redaction store", () => {
     const [record] = await store.getEventsForRequest(1);
     expect(record).toMatchObject({ id: 7, newCount: 1, createdAt: created.toISOString() });
 
-    fake.state.results = [[{ id: 1 }, { id: 2 }]];
+    fake.state.results = [[{ id: 1 }, { id: 2 }], undefined];
     expect(await store.deleteEventsOlderThan(30)).toBe(2);
+    // Jev call records share the retention period.
+    expect(fake.state.calls.filter(([name]) => name === "delete")).toEqual([
+      ["delete", [redactionEventsTable]],
+      ["delete", [redactionJevCallsTable]],
+    ]);
+  });
+
+  test("Jev calls are inserted as given", async () => {
+    const input = {
+      messageRequestId: 1,
+      sessionId: "s",
+      requestSequence: 1,
+      userId: 2,
+      keyId: 3,
+      mode: "sync",
+      sendMode: "masked",
+      model: "jev-latest",
+      candidateCount: 1,
+      judgedCount: 1,
+      activeRules: 1,
+      pendingRules: 0,
+      inputTokens: null,
+      durationMs: 12,
+      timedOut: false,
+      ok: true,
+      error: null,
+      originalsRecorded: true,
+      results: [],
+    };
+    fake.state.results = [undefined];
+    await store.insertJevCall(input);
+    expect(callsOf("insert")[0][1][0]).toBe(redactionJevCallsTable);
+    expect(callsOf("insert.values")[0][1][0]).toBe(input);
+  });
+
+  test("record lists are paged and mapped", async () => {
+    const query = { page: 2, pageSize: 2, from: created, to: null, sessionId: "s" };
+    fake.state.results = [
+      [
+        { id: 3, model: null, createdAt: created, findings: [] },
+        { id: 2, model: "claude", createdAt: "2026-01-01T00:00:00.000Z", findings: [] },
+        { id: 1, model: null, createdAt: null, findings: [] },
+      ],
+    ];
+    const events = await store.listRedactionEvents(query);
+    expect(events).toMatchObject({ page: 2, pageSize: 2, hasMore: true });
+    expect(events.items.map((item) => [item.id, item.model, item.createdAt])).toEqual([
+      [3, null, created.toISOString()],
+      [2, "claude", "2026-01-01T00:00:00.000Z"],
+    ]);
+    expect(callsOf("select.limit")[0][1]).toEqual([3]);
+    expect(callsOf("select.offset")[0][1]).toEqual([2]);
+    expect(callsOf("select.leftJoin")).toHaveLength(3);
+
+    fake.state.results = [[{ id: 1, createdAt: null }]];
+    const calls = await store.listJevCalls({ page: 1, pageSize: 20, filter: "discovered" });
+    expect(calls).toMatchObject({ hasMore: false, items: [{ id: 1 }] });
+    expect(calls.items[0].createdAt).toBe(new Date(0).toISOString());
+    expect(callsOf("select.offset").at(-1)?.[1]).toEqual([0]);
+
+    fake.state.results = [[]];
+    expect((await store.listJevCalls({ page: 1, pageSize: 5, filter: "failed" })).items).toEqual(
+      []
+    );
+  });
+
+  test("stats aggregate both tables and the most frequent rules", async () => {
+    fake.state.results = [
+      [{ events: "4", findings: 9, sessions: 2 }],
+      [
+        {
+          calls: 3,
+          failed: 1,
+          timedOut: "1",
+          candidates: 7,
+          activeRules: 2,
+          pendingRules: 1,
+        },
+      ],
+      [{ count: 5 }],
+    ];
+    fake.state.executeResults = [
+      [
+        { rule_id: "builtin:email", rule_name: "Email", count: "6" },
+        { rule_id: "jev:3", rule_name: null, count: 3 },
+      ],
+    ];
+    expect(
+      await store.getRedactionStats({ from: created, to: new Date("2026-02-01T00:00:00.000Z") })
+    ).toEqual({
+      events: 4,
+      findings: 9,
+      sessions: 2,
+      jevCalls: 3,
+      jevFailed: 1,
+      jevTimedOut: 1,
+      jevCandidates: 7,
+      jevActiveRules: 2,
+      jevPendingRules: 1,
+      pendingReview: 5,
+      topRules: [
+        { ruleId: "builtin:email", ruleName: "Email", count: 6 },
+        { ruleId: "jev:3", ruleName: "jev:3", count: 3 },
+      ],
+    });
+
+    // Empty tables still produce zeros.
+    fake.state.results = [[], [], []];
+    fake.state.executeResults = [[]];
+    const empty = await store.getRedactionStats({});
+    expect(empty).toMatchObject({ events: 0, jevCalls: 0, pendingReview: 0, topRules: [] });
   });
 });

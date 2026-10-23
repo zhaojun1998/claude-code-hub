@@ -72,6 +72,7 @@ export interface VirtualizedLogsTableFilters {
   endpoint?: string;
   minRetryCount?: number;
   replayFilter?: "all" | "replay" | "non-replay";
+  redactedOnly?: boolean; // [fork:redaction]
 }
 
 const STATUS_BADGE_FALLBACK =

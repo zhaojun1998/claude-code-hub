@@ -27,13 +27,18 @@ import {
 } from "@/lib/redaction/config";
 import { callJev } from "@/lib/redaction/jev-client";
 import { notifyRedactionConfigChanged } from "@/lib/redaction/outbound";
+import { normalizeRecordsQuery, type RecordsQueryInput } from "@/lib/redaction/records-query";
 import { RULE_STATUSES, validateRuleInput } from "@/lib/redaction/rule-validation";
 import { buildEngine } from "@/lib/redaction/runtime";
 import * as store from "@/lib/redaction/store";
 import type {
   DiscoveredRuleStatus,
+  JevCallRecord,
+  RecordPage,
+  RedactionEventListItem,
   RedactionEventRecord,
   RedactionEventSummary,
+  RedactionRecordStats,
   StoredRedactionRule,
 } from "@/lib/redaction/types";
 
@@ -277,6 +282,44 @@ export async function getRedactionSummariesAction(
     return { ok: true, data: await store.getEventSummaries(ids, userId) };
   } catch (error) {
     logger.error("[RedactionAction] Failed to load summaries", { error });
+    return failure("LOAD_FAILED");
+  }
+}
+
+/** Totals for the redaction records page (admin only). */
+export async function getRedactionRecordStatsAction(
+  input?: RecordsQueryInput
+): Promise<ActionResult<RedactionRecordStats>> {
+  try {
+    if (!(await requireAdmin())) return failure("PERMISSION_DENIED");
+    const { from, to } = normalizeRecordsQuery(input);
+    return { ok: true, data: await store.getRedactionStats({ from, to }) };
+  } catch (error) {
+    logger.error("[RedactionAction] Failed to load record stats", { error });
+    return failure("LOAD_FAILED");
+  }
+}
+
+export async function listRedactionEventsAction(
+  input?: RecordsQueryInput
+): Promise<ActionResult<RecordPage<RedactionEventListItem>>> {
+  try {
+    if (!(await requireAdmin())) return failure("PERMISSION_DENIED");
+    return { ok: true, data: await store.listRedactionEvents(normalizeRecordsQuery(input)) };
+  } catch (error) {
+    logger.error("[RedactionAction] Failed to list redaction records", { error });
+    return failure("LOAD_FAILED");
+  }
+}
+
+export async function listJevCallsAction(
+  input?: RecordsQueryInput
+): Promise<ActionResult<RecordPage<JevCallRecord>>> {
+  try {
+    if (!(await requireAdmin())) return failure("PERMISSION_DENIED");
+    return { ok: true, data: await store.listJevCalls(normalizeRecordsQuery(input)) };
+  } catch (error) {
+    logger.error("[RedactionAction] Failed to list Jev calls", { error });
     return failure("LOAD_FAILED");
   }
 }

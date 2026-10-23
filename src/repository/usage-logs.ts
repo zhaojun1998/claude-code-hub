@@ -9,6 +9,7 @@ import {
   type RequestCacheMetricAvailability,
 } from "@/lib/cache-effectiveness/request-metrics";
 import { isLedgerOnlyMode } from "@/lib/ledger-fallback";
+import { buildRedactionLogConditions } from "@/lib/redaction/usage-log-filter"; // [fork:redaction]
 import { extractAnthropicEffortFromSpecialSettings } from "@/lib/utils/anthropic-effort";
 import { isNonBillingEndpoint } from "@/lib/utils/performance-formatter";
 import { buildUnifiedSpecialSettings } from "@/lib/utils/special-settings";
@@ -48,6 +49,7 @@ export interface UsageLogFilters {
   /** 最低重试次数（按 provider_chain 中“实际请求”数量 - 1 计算；<= 0 视为不筛选） */
   minRetryCount?: number;
   replayFilter?: UsageLogReplayFilter;
+  redactedOnly?: boolean; // [fork:redaction]
   page?: number;
   pageSize?: number;
 }
@@ -558,6 +560,8 @@ export async function findUsageLogsBatch(
       )
     );
   }
+
+  ledgerConditions.push(...buildRedactionLogConditions(filters, usageLedger.requestId)); // [fork:redaction]
 
   const hiddenLedgerEndpointCondition = buildDefaultHiddenUsageLogEndpointCondition(
     usageLedger.endpoint,
@@ -2232,6 +2236,8 @@ export async function findUsageLogsStats(
       )
     );
   }
+
+  conditions.push(...buildRedactionLogConditions(filters, usageLedger.requestId)); // [fork:redaction]
 
   const hiddenStatsLedgerEndpointCondition = buildDefaultHiddenUsageLogEndpointCondition(
     usageLedger.endpoint,

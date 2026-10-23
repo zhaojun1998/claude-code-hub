@@ -47,6 +47,7 @@ const VALID_FILTER_KEYS: (keyof UsageLogFilters)[] = [
   "endpoint",
   "minRetryCount",
   "replayFilter",
+  "redactedOnly", // [fork:redaction]
 ];
 
 function sanitizeFilters(filters: UsageLogFilters): UsageLogFilters {
@@ -136,6 +137,7 @@ export function UsageLogsFilters({
     if (localFilters.actualResponseModelMismatch) count++;
     if (localFilters.endpoint) count++;
     if (localFilters.sessionId) count++;
+    if (localFilters.redactedOnly) count++; // [fork:redaction]
     return count;
   }, [
     isAdmin,
@@ -144,6 +146,7 @@ export function UsageLogsFilters({
     localFilters.actualResponseModelMismatch,
     localFilters.endpoint,
     localFilters.sessionId,
+    localFilters.redactedOnly, // [fork:redaction]
   ]);
 
   const statusActiveCount = useMemo(() => {

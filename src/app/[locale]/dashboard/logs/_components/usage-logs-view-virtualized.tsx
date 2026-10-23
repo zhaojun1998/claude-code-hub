@@ -170,6 +170,7 @@ function UsageLogsViewContent({
       endpoint: _params.get("endpoint") ?? undefined,
       minRetry: _params.get("minRetry") ?? undefined,
       replayFilter: _params.get("replayFilter") ?? undefined,
+      redactedOnly: _params.get("redactedOnly") ?? undefined, // [fork:redaction]
       page: _params.get("page") ?? undefined,
     });
 
@@ -274,6 +275,7 @@ function UsageLogsViewContent({
     if (statsFilters.endpoint) count++;
     if (statsFilters.minRetryCount !== undefined && statsFilters.minRetryCount > 0) count++;
     if (statsFilters.replayFilter && statsFilters.replayFilter !== "all") count++;
+    if (statsFilters.redactedOnly) count++; // [fork:redaction]
     return count;
   }, [statsFilters]);
   const [isFilterOpen, setIsFilterOpen] = useState(activeFilterCount > 0);

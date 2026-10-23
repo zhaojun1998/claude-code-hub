@@ -16,6 +16,7 @@ import { requireAuth } from "@/lib/api/v1/_shared/auth-middleware";
 import { createProblemResponse } from "@/lib/api/v1/_shared/error-envelope";
 import { jsonResponse } from "@/lib/api/v1/_shared/response-helpers";
 import { logger } from "@/lib/logger";
+import type { RecordsQueryInput } from "./records-query";
 
 export const REDACTION_API_BASE_PATH = "/api/fork/redaction";
 
@@ -88,6 +89,17 @@ export function parseIdList(raw: string | undefined): number[] {
   return [...new Set(ids)].slice(0, MAX_SUMMARY_IDS);
 }
 
+function readRecordsQuery(c: Context): RecordsQueryInput {
+  return {
+    from: c.req.query("from"),
+    to: c.req.query("to"),
+    page: c.req.query("page"),
+    pageSize: c.req.query("pageSize"),
+    sessionId: c.req.query("sessionId"),
+    filter: c.req.query("filter"),
+  };
+}
+
 export function createRedactionApp(): Hono {
   const app = new Hono().basePath(REDACTION_API_BASE_PATH);
   const admin = requireAuth("admin");
@@ -149,6 +161,18 @@ export function createRedactionApp(): Hono {
 
   app.get("/summaries", read, (c) =>
     respond(c, (a) => a.getRedactionSummariesAction, [parseIdList(c.req.query("ids"))])
+  );
+
+  app.get("/records/stats", admin, (c) =>
+    respond(c, (a) => a.getRedactionRecordStatsAction, [readRecordsQuery(c)])
+  );
+
+  app.get("/records/events", admin, (c) =>
+    respond(c, (a) => a.listRedactionEventsAction, [readRecordsQuery(c)])
+  );
+
+  app.get("/records/jev-calls", admin, (c) =>
+    respond(c, (a) => a.listJevCallsAction, [readRecordsQuery(c)])
   );
 
   app.get("/requests/:id/events", read, (c) => {

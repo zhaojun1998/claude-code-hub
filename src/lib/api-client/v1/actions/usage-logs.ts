@@ -1,4 +1,5 @@
 import type { UsageLogsExportStatus } from "@/actions/usage-logs";
+import { withRedactionExportFilter } from "@/lib/redaction/usage-log-params"; // [fork:redaction]
 import type { UsageLogSummary, UsageLogsBatchResult } from "@/repository/usage-logs";
 import {
   apiGet,
@@ -61,16 +62,18 @@ export function getUsageLogSessionIdSuggestions(params: object) {
 }
 
 export function exportUsageLogs(params?: object) {
+  const request = withRedactionExportFilter("/api/v1/usage-logs/exports", params); // [fork:redaction]
   // Unwrap the REST `{ csv }` envelope so the result matches the server action
   // contract (ActionResult<string>).
   return toActionResult(
-    apiPost<{ csv: string }>("/api/v1/usage-logs/exports", params).then((body) => body.csv)
+    apiPost<{ csv: string }>(request.path, request.body).then((body) => body.csv)
   );
 }
 
 export function startUsageLogsExport(params?: object) {
+  const request = withRedactionExportFilter("/api/v1/usage-logs/exports", params); // [fork:redaction]
   return toActionResult(
-    apiPost("/api/v1/usage-logs/exports", params, {
+    apiPost(request.path, request.body, {
       headers: { Prefer: "respond-async" },
     })
   );

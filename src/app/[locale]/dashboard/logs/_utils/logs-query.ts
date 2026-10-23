@@ -1,3 +1,5 @@
+import { readRedactionLogFilter } from "@/lib/redaction/usage-log-params"; // [fork:redaction]
+
 export interface LogsUrlFilters {
   userId?: number;
   keyId?: number;
@@ -12,6 +14,7 @@ export interface LogsUrlFilters {
   endpoint?: string;
   minRetryCount?: number;
   replayFilter?: "all" | "replay" | "non-replay";
+  redactedOnly?: boolean; // [fork:redaction]
   page?: number;
 }
 
@@ -69,6 +72,7 @@ export function parseLogsUrlFilters(searchParams: {
     endpoint: parseStringParam(searchParams.endpoint),
     minRetryCount: parseIntParam(searchParams.minRetry),
     replayFilter,
+    ...readRedactionLogFilter(parseStringParam(searchParams.redactedOnly)), // [fork:redaction]
     page,
   };
 }
@@ -103,6 +107,8 @@ export function buildLogsUrlQuery(filters: LogsUrlFilters): URLSearchParams {
   if (filters.replayFilter && filters.replayFilter !== "all") {
     query.set("replayFilter", filters.replayFilter);
   }
+
+  if (filters.redactedOnly) query.set("redactedOnly", "true"); // [fork:redaction]
 
   if (filters.page !== undefined && filters.page > 1) {
     query.set("page", filters.page.toString());

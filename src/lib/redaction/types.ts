@@ -105,6 +105,110 @@ export interface RedactionEventRecord {
   createdAt: string;
 }
 
+/** A redaction record with the request owner's names, for the redaction records page. */
+export interface RedactionEventListItem extends RedactionEventRecord {
+  userId: number | null;
+  userName: string | null;
+  keyId: number | null;
+  keyName: string | null;
+  model: string | null;
+}
+
+/**
+ * What Jev discovery did with one candidate: `active`/`pending` created a rule, `existing`
+ * matched a rule that already existed, `benign` and `low_confidence` created nothing,
+ * `unjudged` was missing from the Jev response and `failed` belongs to a failed call.
+ */
+export type JevCandidateOutcome =
+  | "active"
+  | "pending"
+  | "existing"
+  | "benign"
+  | "low_confidence"
+  | "unjudged"
+  | "failed";
+
+export interface JevCandidateResult {
+  /** Original candidate when originals are recorded, otherwise a masked preview. */
+  value: string;
+  hint: string;
+  keyName: string | null;
+  path: string;
+  category: string | null;
+  confidence: number | null;
+  outcome: JevCandidateOutcome;
+  ruleIds: number[];
+}
+
+export interface JevCallRecord {
+  id: number;
+  messageRequestId: number | null;
+  sessionId: string | null;
+  requestSequence: number | null;
+  userId: number | null;
+  userName: string | null;
+  keyId: number | null;
+  keyName: string | null;
+  mode: string;
+  sendMode: string;
+  model: string | null;
+  candidateCount: number;
+  judgedCount: number;
+  activeRules: number;
+  pendingRules: number;
+  inputTokens: number | null;
+  durationMs: number;
+  timedOut: boolean;
+  ok: boolean;
+  error: string | null;
+  originalsRecorded: boolean;
+  results: JevCandidateResult[];
+  createdAt: string;
+}
+
+export interface RecordsRange {
+  from?: Date | null;
+  to?: Date | null;
+}
+
+export interface RecordsPageQuery extends RecordsRange {
+  /** 1-based. */
+  page: number;
+  pageSize: number;
+}
+
+export interface RedactionEventsQuery extends RecordsPageQuery {
+  sessionId?: string | null;
+}
+
+export type JevCallsFilter = "all" | "discovered" | "failed";
+
+export interface JevCallsQuery extends RecordsPageQuery {
+  filter?: JevCallsFilter;
+}
+
+export interface RecordPage<T> {
+  items: T[];
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+}
+
+export interface RedactionRecordStats {
+  events: number;
+  findings: number;
+  sessions: number;
+  jevCalls: number;
+  jevFailed: number;
+  jevTimedOut: number;
+  jevCandidates: number;
+  jevActiveRules: number;
+  jevPendingRules: number;
+  /** Rules waiting for review right now (not limited to the time range). */
+  pendingReview: number;
+  topRules: Array<{ ruleId: string; ruleName: string; count: number }>;
+}
+
 export interface RedactionEventSummary {
   messageRequestId: number;
   totalCount: number;

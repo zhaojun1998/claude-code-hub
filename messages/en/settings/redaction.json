@@ -183,7 +183,8 @@
     "loadFailed": "Failed to load redaction records",
     "copy": "Copy original",
     "copied": "Copied",
-    "more": "{count} more values not stored"
+    "more": "{count} more values not stored",
+    "filterRedactedOnly": "Triggered redaction"
   },
   "errors": {
     "PERMISSION_DENIED": "Permission denied",
@@ -242,5 +243,100 @@
     "ipv4": "IPv4 address",
     "mac_address": "MAC address",
     "internal_host": "Internal host name (.internal/.corp/.lan ...)"
+  },
+  "records": {
+    "nav": "Redaction Records",
+    "title": "Redaction Records",
+    "description": "What was masked in outbound requests, and what Jev discovery judged and learned.",
+    "settingsLink": "Redaction settings",
+    "refresh": "Refresh",
+    "loading": "Loading...",
+    "loadFailed": "Failed to load records",
+    "range": {
+      "label": "Time range",
+      "24h": "Last 24 hours",
+      "7d": "Last 7 days",
+      "30d": "Last 30 days",
+      "all": "All time"
+    },
+    "tabs": {
+      "events": "Redaction records",
+      "jev": "Jev discovery"
+    },
+    "stats": {
+      "events": "Requests with new redactions",
+      "sessions": "{count, plural, one {# session} other {# sessions}}",
+      "findings": "Values masked (new)",
+      "jevCalls": "Jev calls",
+      "jevCallsHint": "{candidates} candidates sent, {failed} failed, {timedOut} over the wait timeout",
+      "jevRules": "Rules discovered by Jev",
+      "jevRulesHint": "{active} active, {pending} pending review",
+      "pendingReview": "{count, plural, one {# discovered rule is} other {# discovered rules are}} waiting for review",
+      "pendingReviewLink": "Review rules",
+      "topRules": "Most frequent rules",
+      "noTopRules": "Nothing was masked in this range."
+    },
+    "events": {
+      "empty": "No redaction records in this range.",
+      "masked": "{count} new / {total} total",
+      "details": "Details",
+      "hide": "Hide"
+    },
+    "jev": {
+      "filterLabel": "Filter Jev calls",
+      "filter": {
+        "all": "All calls",
+        "discovered": "Discovered rules",
+        "failed": "Failed calls"
+      },
+      "empty": "No Jev calls in this range.",
+      "emptyHint": "Jev is called only when Jev discovery is enabled and a request contains candidate values that have not been judged before.",
+      "summary": "{candidates} candidates, {judged} judged",
+      "activeRules": "{count} active",
+      "pendingRules": "{count} pending",
+      "duration": "{ms} ms",
+      "status": {
+        "ok": "OK",
+        "failed": "Failed",
+        "timedOut": "Over the wait timeout"
+      },
+      "mode": {
+        "sync": "Sync",
+        "async": "Async"
+      },
+      "sendMode": {
+        "masked": "Shape only",
+        "full": "Full value"
+      },
+      "details": "Details",
+      "hide": "Hide",
+      "error": "Error: {error}",
+      "tokens": "{count} input tokens",
+      "maskedValues": "Original values were not stored; masked previews are shown.",
+      "value": "Value",
+      "signal": "Signal",
+      "confidence": "{value}% confidence",
+      "ruleIds": "Rules {ids}",
+      "category": {
+        "secret": "Secret",
+        "personal": "Personal data",
+        "internal": "Internal",
+        "benign": "Benign"
+      },
+      "outcome": {
+        "active": "Rule created (active)",
+        "pending": "Rule created (pending review)",
+        "existing": "Rule already existed",
+        "benign": "Judged benign",
+        "low_confidence": "Below the suggestion threshold",
+        "unjudged": "No verdict returned",
+        "failed": "Call failed"
+      }
+    },
+    "pager": {
+      "prev": "Previous",
+      "next": "Next",
+      "page": "Page {page}"
+    }
   }
 }

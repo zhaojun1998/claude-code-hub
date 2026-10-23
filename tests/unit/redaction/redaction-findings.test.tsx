@@ -4,7 +4,10 @@
 
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { RedactionFindings } from "@/app/[locale]/dashboard/logs/_components/redaction/redaction-findings";
+import {
+  RedactionFindings,
+  RedactionFindingsList,
+} from "@/app/[locale]/dashboard/logs/_components/redaction/redaction-findings";
 import { redactionApi } from "@/lib/redaction/client-api";
 import type { RedactionEventRecord, RedactionFinding } from "@/lib/redaction/types";
 import {
@@ -253,5 +256,29 @@ describe("RedactionFindings", () => {
     await flush();
 
     expect(getEvents).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("RedactionFindingsList", () => {
+  test("renders findings that were already loaded without a request", async () => {
+    const { container } = await render(<RedactionFindingsList events={recordedEvents} />);
+
+    expect(getEvents).not.toHaveBeenCalled();
+    expect(container.textContent).toContain(
+      "2 values newly masked in this request. 4 values were masked in total"
+    );
+    expect(items(container)).toHaveLength(2);
+    expect(textOf(items(container)[0].querySelector(".flex"))).toBe("Personal dataEmail address");
+    expect(textOf(items(container)[1].querySelector(".flex"))).toBe("CustomACME token");
+  });
+
+  test("shows a zero summary and no findings without records", async () => {
+    const { container } = await render(<RedactionFindingsList events={[]} />);
+
+    expect(textOf(container)).toBe(
+      "0 values newly masked in this request. 0 values were masked in total, including earlier turns of the session."
+    );
+    expect(items(container)).toHaveLength(0);
+    expect(getEvents).not.toHaveBeenCalled();
   });
 });

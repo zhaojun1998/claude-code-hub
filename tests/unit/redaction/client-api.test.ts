@@ -50,6 +50,10 @@ describe("redaction client api", () => {
     await redactionApi.clearJevVerdicts();
     await redactionApi.getSummaries([1, 2]);
     await redactionApi.getEvents(8);
+    await redactionApi.getRecordStats({ from: "2026-01-01T00:00:00.000Z", to: null });
+    await redactionApi.listRecordEvents({ page: 2, pageSize: 20, sessionId: "" });
+    await redactionApi.listJevCalls({ filter: "discovered" });
+    await redactionApi.listJevCalls();
 
     const base = "/api/fork/redaction";
     expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
@@ -65,6 +69,10 @@ describe("redaction client api", () => {
       `DELETE ${base}/jev/verdicts`,
       `GET ${base}/summaries?ids=1,2`,
       `GET ${base}/requests/8/events`,
+      `GET ${base}/records/stats?from=2026-01-01T00%3A00%3A00.000Z`,
+      `GET ${base}/records/events?page=2&pageSize=20`,
+      `GET ${base}/records/jev-calls?filter=discovered`,
+      `GET ${base}/records/jev-calls`,
     ]);
     expect(calls[2].body).toEqual({ ruleId: "builtin:email", enabled: false });
     expect(calls[5].body).toEqual({ status: "rejected" });

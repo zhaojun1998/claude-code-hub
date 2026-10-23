@@ -36,6 +36,7 @@ export function ActiveFiltersDisplay({
   className,
 }: ActiveFiltersDisplayProps) {
   const t = useTranslations("dashboard.logs.filters");
+  const tRedaction = useTranslations("settings.redaction.logs"); // [fork:redaction]
 
   const activeFilters = useMemo(() => {
     const result: ActiveFilter[] = [];
@@ -155,8 +156,17 @@ export function ActiveFiltersDisplay({
       });
     }
 
+    // [fork:redaction]
+    if (filters.redactedOnly) {
+      result.push({
+        key: "redactedOnly",
+        label: tRedaction("filterRedactedOnly"),
+        value: t("enabled"),
+      });
+    }
+
     return result;
-  }, [filters, displayNames, isAdmin, serverTimeZone, t]);
+  }, [filters, displayNames, isAdmin, serverTimeZone, t, tRedaction]);
 
   if (activeFilters.length === 0) {
     return null;

@@ -45,7 +45,7 @@
 
 - 推送到 `main` 时自动运行：先跑脱敏单元测试，再用上游的 `deploy/Dockerfile` 构建并推送镜像。
 - 镜像：`ghcr.io/<你的用户名>/claude-code-hub`，标签 `latest`、`<上游版本>-fork.<短 SHA>`、`sha-<短 SHA>`。可用仓库变量 `FORK_IMAGE_NAME` 改镜像名。
-- 默认只构建 `linux/amd64`（快）；需要 arm64 时在 Actions 页手动运行并把 platforms 填成 `linux/amd64,linux/arm64`。
+- 同时构建 `linux/amd64` 和 `linux/arm64`：两种架构分别在 GitHub 的原生机器上并行构建（不用 QEMU 模拟），最后合并成同一个多架构标签，x86 和 ARM 服务器拉同一个地址即可。原生 ARM 构建机对公开仓库免费。
 
 首次设置：
 

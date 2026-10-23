@@ -1,7 +1,8 @@
 name: Fork GHCR Image
 
-# Builds the fork's Docker image and pushes it to ghcr.io/<owner>/<image>.
-# Runs only outside the upstream repository; upstream keeps its own release pipeline.
+# Builds the fork's Docker image for linux/amd64 and linux/arm64 and pushes it to
+# ghcr.io/<owner>/<image>. Each architecture builds on a native runner (no QEMU), then the
+# merge job publishes one multi-arch tag set. Runs only outside the upstream repository.
 
 on:
   push:
@@ -12,17 +13,7 @@ on:
       - "docs/**"
       - "docs-site/**"
   workflow_dispatch:
-    inputs:
-      platforms:
-        description: "Target platforms (comma separated)"
-        required: false
-        default: "linux/amd64"
   workflow_call:
-    inputs:
-      platforms:
-        type: string
-        required: false
-        default: "linux/amd64"
 
 permissions:
   contents: read
@@ -62,8 +53,84 @@ jobs:
   build:
     needs: test
     if: github.repository != 'ding113/claude-code-hub'
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Compute image name and version
+        id: meta
+        env:
+          IMAGE_NAME: ${{ vars.FORK_IMAGE_NAME || 'claude-code-hub' }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          IMAGE=$(echo "ghcr.io/${{ github.repository_owner }}/${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          UPSTREAM_VERSION=$(tr -d '[:space:]' < VERSION 2>/dev/null || echo "0.0.0")
+          {
+            echo "image=${IMAGE}"
+            echo "version=${UPSTREAM_VERSION}-fork.${SHORT_SHA}"
+            echo "pair=${PLATFORM//\//-}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./deploy/Dockerfile
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.version }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          outputs: type=image,name=${{ steps.meta.outputs.image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=fork-ghcr-${{ steps.meta.outputs.pair }}
+          cache-to: type=gha,mode=max,scope=fork-ghcr-${{ steps.meta.outputs.pair }}
+
+      - name: Export digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests"
+          touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-${{ steps.meta.outputs.pair }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    needs: build
+    if: github.repository != 'ding113/claude-code-hub'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -78,18 +145,18 @@ jobs:
           IMAGE=$(echo "ghcr.io/${{ github.repository_owner }}/${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')
           SHORT_SHA=$(git rev-parse --short=7 HEAD)
           UPSTREAM_VERSION=$(tr -d '[:space:]' < VERSION 2>/dev/null || echo "0.0.0")
-          VERSION="${UPSTREAM_VERSION}-fork.${SHORT_SHA}"
           {
             echo "image=${IMAGE}"
-            echo "version=${VERSION}"
+            echo "version=${UPSTREAM_VERSION}-fork.${SHORT_SHA}"
             echo "short_sha=${SHORT_SHA}"
           } >> "$GITHUB_OUTPUT"
-          echo "Image: ${IMAGE}"
-          echo "Version: ${VERSION}"
 
-      - name: Set up QEMU
-        if: contains(inputs.platforms || 'linux/amd64', 'arm')
-        uses: docker/setup-qemu-action@v4
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -101,30 +168,25 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./deploy/Dockerfile
-          platforms: ${{ inputs.platforms || 'linux/amd64' }}
-          push: true
-          build-args: |
-            APP_VERSION=${{ steps.meta.outputs.version }}
-          tags: |
-            ${{ steps.meta.outputs.image }}:latest
-            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
-            ${{ steps.meta.outputs.image }}:sha-${{ steps.meta.outputs.short_sha }}
-          labels: |
-            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-          cache-from: type=gha,scope=fork-ghcr
-          cache-to: type=gha,mode=max,scope=fork-ghcr
+      - name: Create multi-arch tags
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          SHORT_SHA: ${{ steps.meta.outputs.short_sha }}
+        run: |
+          # shellcheck disable=SC2046
+          docker buildx imagetools create \
+            -t "${IMAGE}:latest" \
+            -t "${IMAGE}:${VERSION}" \
+            -t "${IMAGE}:sha-${SHORT_SHA}" \
+            $(printf "${IMAGE}@sha256:%s " *)
+          docker buildx imagetools inspect "${IMAGE}:latest"
 
       - name: Summary
         run: |
           {
-            echo "### Image pushed"
+            echo "### Image pushed (linux/amd64, linux/arm64)"
             echo ""
             echo "- \`${{ steps.meta.outputs.image }}:latest\`"
             echo "- \`${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}\`"

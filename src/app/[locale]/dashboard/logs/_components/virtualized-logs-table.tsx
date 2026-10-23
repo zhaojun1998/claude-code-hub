@@ -45,6 +45,7 @@ import type { BillingModelSource } from "@/types/system-config";
 import { ErrorDetailsDialog } from "./error-details-dialog";
 import { ModelDisplayWithRedirect } from "./model-display-with-redirect";
 import { ProviderChainPopover } from "./provider-chain-popover";
+import { RedactionBadge } from "./redaction/redaction-badge";
 import { ThinkingEffortDisplay } from "./thinking-effort-display";
 
 const BATCH_SIZE = 50;
@@ -1404,6 +1405,8 @@ export function VirtualizedLogsTable({
                           }
                         />
                       )}
+                      {/* [fork:redaction] */}
+                      <RedactionBadge requestId={log.id} />
                     </div>
                   </div>
                 );

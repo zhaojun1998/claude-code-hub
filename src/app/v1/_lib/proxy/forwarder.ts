@@ -3760,6 +3760,11 @@ export class ProxyForwarder {
           // Raw passthrough: preserve original request body bytes as-is
           requestBody = session.request.buffer;
           session.forwardedRequestBody = retainForwardedBody ? session.request.log : null;
+          // [fork:redaction] mask sensitive values before they leave the gateway
+          {
+            const { applyOutboundRedactionToRaw } = await import("@/lib/redaction/outbound");
+            requestBody = await applyOutboundRedactionToRaw(session, session.request.buffer);
+          }
 
           try {
             isStreaming = (session.request.message as Record<string, unknown>).stream === true;
@@ -3843,6 +3848,12 @@ export class ProxyForwarder {
           if (!ProxyForwarder.getEndpointPolicy(session).bypassRequestFilters) {
             const { requestFilterEngine } = await import("@/lib/request-filter-engine");
             await requestFilterEngine.applyFinal(session, messageToSend, processedHeaders);
+          }
+
+          // [fork:redaction] mask sensitive values in the per-attempt copy before serialization
+          {
+            const { applyOutboundRedaction } = await import("@/lib/redaction/outbound");
+            await applyOutboundRedaction(session, messageToSend);
           }
 
           if (requestPath === "/v1/images/generations") {

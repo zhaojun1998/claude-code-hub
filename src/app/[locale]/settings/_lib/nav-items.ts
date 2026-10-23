@@ -53,6 +53,12 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
     iconName: "shield-alert",
   },
   {
+    href: "/settings/redaction",
+    labelKey: "redaction.nav",
+    label: "Redaction",
+    iconName: "shield-alert",
+  },
+  {
     href: "/settings/error-rules",
     labelKey: "nav.errorRules",
     label: "Error Rules",

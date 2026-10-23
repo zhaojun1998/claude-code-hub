@@ -14,6 +14,7 @@ import type { ProviderChainItem } from "@/types/message";
 import type { RoutingTraceV1 } from "@/types/routing-trace";
 import type { SpecialSetting } from "@/types/special-settings";
 import type { BillingModelSource } from "@/types/system-config";
+import { RedactionDetailsSection } from "../redaction/redaction-badge";
 import { LogicTraceTab, PerformanceTab, SummaryTab } from "./components";
 
 interface ErrorDetailsDialogProps {
@@ -362,6 +363,8 @@ export function ErrorDetailsDialog({
             </TabsList>
 
             <TabsContent value="summary" className="mt-4">
+              {/* [fork:redaction] */}
+              <RedactionDetailsSection requestId={requestId} />
               <SummaryTab
                 {...sharedProps}
                 hasMessages={hasMessages}

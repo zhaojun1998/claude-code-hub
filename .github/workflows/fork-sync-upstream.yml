@@ -1,0 +1,81 @@
+name: Fork Sync Upstream
+
+# Merges upstream main into the fork's main and rebuilds the image when anything changed.
+# On merge conflicts the run fails without pushing; resolve them locally (see FORK.md).
+#
+# Pushing commits that touch .github/workflows needs a token with the `workflow` scope:
+# add a fine-grained PAT as the repository secret SYNC_TOKEN (Contents: read/write,
+# Workflows: read/write). Without it, such upstream changes must be synced manually.
+
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: fork-sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository != 'ding113/claude-code-hub'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      merged: ${{ steps.merge.outputs.merged }}
+      via_pat: ${{ steps.merge.outputs.via_pat }}
+    steps:
+      - name: Checkout fork main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Merge upstream
+        id: merge
+        env:
+          UPSTREAM_REPO: ${{ vars.UPSTREAM_REPO || 'ding113/claude-code-hub' }}
+          UPSTREAM_BRANCH: ${{ vars.UPSTREAM_BRANCH || 'main' }}
+          HAS_PAT: ${{ secrets.SYNC_TOKEN != '' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          git fetch upstream "${UPSTREAM_BRANCH}"
+
+          echo "via_pat=${HAS_PAT}" >> "$GITHUB_OUTPUT"
+
+          if git merge-base --is-ancestor "upstream/${UPSTREAM_BRANCH}" HEAD; then
+            echo "Already up to date with ${UPSTREAM_REPO}@${UPSTREAM_BRANCH}"
+            echo "merged=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          BEFORE=$(git rev-parse HEAD)
+          if ! git merge --no-edit "upstream/${UPSTREAM_BRANCH}"; then
+            echo "Conflicting files:"
+            git diff --name-only --diff-filter=U
+            git merge --abort
+            echo "::error::Upstream merge has conflicts. Resolve locally: git fetch upstream && git merge upstream/${UPSTREAM_BRANCH}"
+            exit 1
+          fi
+
+          if [ "${HAS_PAT}" != "true" ] && [ -n "$(git diff --name-only "${BEFORE}" HEAD -- .github/workflows)" ]; then
+            echo "::error::Upstream changed .github/workflows; GITHUB_TOKEN cannot push that. Add a SYNC_TOKEN secret or sync manually."
+            exit 1
+          fi
+
+          git push origin HEAD:main
+          echo "merged=true" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: sync
+    # A push made with a PAT triggers fork-ghcr.yml by itself; GITHUB_TOKEN pushes do not.
+    if: needs.sync.outputs.merged == 'true' && needs.sync.outputs.via_pat != 'true'
+    uses: ./.github/workflows/fork-ghcr.yml
+    secrets: inherit

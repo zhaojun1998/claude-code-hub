@@ -8,6 +8,7 @@ import logs from "./logs.json";
 import nav from "./nav.json";
 import notifications from "./notifications.json";
 import prices from "./prices.json";
+import redaction from "./redaction.json";
 import requestFilters from "./requestFilters.json";
 import sensitiveWords from "./sensitiveWords.json";
 import statusPage from "./statusPage.json";
@@ -113,6 +114,7 @@ export default {
   providerTypes: providersFormProviderTypes,
   prices,
   sensitiveWords,
+  redaction,
   requestFilters,
   logs,
   data,

@@ -1,0 +1,133 @@
+name: Fork GHCR Image
+
+# Builds the fork's Docker image and pushes it to ghcr.io/<owner>/<image>.
+# Runs only outside the upstream repository; upstream keeps its own release pipeline.
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "docs-site/**"
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Target platforms (comma separated)"
+        required: false
+        default: "linux/amd64"
+  workflow_call:
+    inputs:
+      platforms:
+        type: string
+        required: false
+        default: "linux/amd64"
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: fork-ghcr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    if: github.repository != 'ding113/claude-code-hub'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run fork tests
+        run: bun run test tests/unit/redaction
+
+  build:
+    needs: test
+    if: github.repository != 'ding113/claude-code-hub'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Compute image name and tags
+        id: meta
+        env:
+          IMAGE_NAME: ${{ vars.FORK_IMAGE_NAME || 'claude-code-hub' }}
+        run: |
+          IMAGE=$(echo "ghcr.io/${{ github.repository_owner }}/${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          UPSTREAM_VERSION=$(tr -d '[:space:]' < VERSION 2>/dev/null || echo "0.0.0")
+          VERSION="${UPSTREAM_VERSION}-fork.${SHORT_SHA}"
+          {
+            echo "image=${IMAGE}"
+            echo "version=${VERSION}"
+            echo "short_sha=${SHORT_SHA}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Image: ${IMAGE}"
+          echo "Version: ${VERSION}"
+
+      - name: Set up QEMU
+        if: contains(inputs.platforms || 'linux/amd64', 'arm')
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./deploy/Dockerfile
+          platforms: ${{ inputs.platforms || 'linux/amd64' }}
+          push: true
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.version }}
+          tags: |
+            ${{ steps.meta.outputs.image }}:latest
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+            ${{ steps.meta.outputs.image }}:sha-${{ steps.meta.outputs.short_sha }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=fork-ghcr
+          cache-to: type=gha,mode=max,scope=fork-ghcr
+
+      - name: Summary
+        run: |
+          {
+            echo "### Image pushed"
+            echo ""
+            echo "- \`${{ steps.meta.outputs.image }}:latest\`"
+            echo "- \`${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}\`"
+            echo ""
+            echo "\`docker pull ${{ steps.meta.outputs.image }}:latest\`"
+          } >> "$GITHUB_STEP_SUMMARY"
